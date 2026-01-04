@@ -466,7 +466,7 @@ fun AppHomeScreen(
                     IconButton(
                         onClick = { setShowArticleLanguageSheet(true) },
                         enabled = backStack.last() is HomeSubscreen.Feed ||
-                                (backStack.last() is HomeSubscreen.Article && (backStack.last() as HomeSubscreen.Article).langs?.isEmpty() == false)
+                                (backStack.last() is HomeSubscreen.Article && (backStack.last() as HomeSubscreen.Article).savedState.langs?.isEmpty() == false)
                     ) {
                         Icon(
                             painterResource(R.drawable.translate),

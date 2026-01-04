@@ -31,15 +31,20 @@ data class HomeScreenState(
     val ref: AnnotatedString = AnnotatedString("")
 )
 
+@Immutable
+data class SavedState(
+    val extract: List<List<AnnotatedString>> = emptyList(),
+    val sections: List<Pair<Int, String>> = emptyList(),
+    val langs: List<WikiLang>? = null,
+)
+
 sealed class HomeSubscreen {
     data class Article(
         val title: String = "",
-        val extract: List<List<AnnotatedString>> = emptyList(),
-        val sections: List<Pair<Int, String>> = emptyList(),
+        val savedState: SavedState = SavedState(),
         val listState: LazyListState = LazyListState(),
         val photo: WikiPhoto? = null,
         val photoDesc: String? = null,
-        val langs: List<WikiLang>? = null,
         val currentLang: String? = null,
         val pageId: Int? = null,
         val savedStatus: SavedStatus = SavedStatus.NOT_SAVED

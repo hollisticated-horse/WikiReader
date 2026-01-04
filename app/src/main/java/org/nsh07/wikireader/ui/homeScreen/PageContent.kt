@@ -77,7 +77,7 @@ fun PageContent(
 
     if (showLanguageSheet)
         ArticleLanguageBottomSheet(
-            langs = content.langs ?: emptyList(),
+            langs = content.savedState.langs ?: emptyList(),
             recentLangs = recentLangs,
             currentLang = WikiLang(preferencesState.lang, content.title),
             searchStr = languageSearchStr,
@@ -174,10 +174,10 @@ fun PageContent(
                 }
             }
             item(key = content.title + "#--desc--") { // Main description
-                if (content.extract.isNotEmpty())
+                if (content.savedState.extract.isNotEmpty())
                     SelectionContainer {
                         ParsedBodyText(
-                            body = content.extract[0],
+                            body = content.savedState.extract[0],
                             lang = content.currentLang ?: "en",
                             fontSize = fontSize,
                             fontFamily = fontFamily,
@@ -195,14 +195,14 @@ fun PageContent(
                     }
             }
             itemsIndexed(
-                content.extract,
+                content.savedState.extract,
                 key = { i, it -> "$pageId.$lang#$i" }
             ) { i: Int, it: List<AnnotatedString> ->// Expandable sections logic
                 if (i % 2 == 1)
                     SelectionContainer {
                         ExpandableSection(
-                            title = content.extract[i],
-                            body = content.extract.getOrElse(i + 1) { emptyList() },
+                            title = content.savedState.extract[i],
+                            body = content.savedState.extract.getOrElse(i + 1) { emptyList() },
                             lang = content.currentLang ?: "en",
                             fontSize = fontSize,
                             fontFamily = fontFamily,

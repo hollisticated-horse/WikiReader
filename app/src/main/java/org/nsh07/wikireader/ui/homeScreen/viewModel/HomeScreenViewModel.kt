@@ -167,25 +167,27 @@ class HomeScreenViewModel(
             is HomeAction.LoadSearchResultsDebounced -> loadSearchResultsDebounced(action.query)
             is HomeAction.MarkUserLanguageSelected -> markUserLanguageSelected(action.lang)
             is HomeAction.ReloadPage -> reloadPage(action.persistLang)
-            is HomeAction.SaveArticle -> viewModelScope.launch {
-                if (backStack.last() is HomeSubscreen.Article) {
-                    val last = backStack.last() as HomeSubscreen.Article
-                    if (last.savedStatus == SavedStatus.NOT_SAVED) {
-                        val status = saveArticle()
-                        if (status != WRStatus.SUCCESS)
-                            snackBarHostState.showSnackbar(
-                                String.format(action.unableToSaveError, status.name)
+            is HomeAction.SaveArticle -> {
+                viewModelScope.launch {
+                    if (backStack.last() is HomeSubscreen.Article) {
+                        val last = backStack.last() as HomeSubscreen.Article
+                        if (last.savedStatus == SavedStatus.NOT_SAVED) {
+                            val status = saveArticle()
+                            if (status != WRStatus.SUCCESS)
+                                snackBarHostState.showSnackbar(
+                                    String.format(action.unableToSaveError, status.name)
+                                )
+                            delay(150L)
+                        } else if (last.savedStatus == SavedStatus.SAVED) {
+                            val status = deleteArticle(
+                                pageId = last.pageId ?: 0,
+                                lang = preferencesState.value.lang
                             )
-                        delay(150L)
-                    } else if (last.savedStatus == SavedStatus.SAVED) {
-                        val status = deleteArticle(
-                            pageId = last.pageId ?: 0,
-                            lang = preferencesState.value.lang
-                        )
-                        if (status != WRStatus.SUCCESS)
-                            snackBarHostState.showSnackbar(
-                                String.format(action.unableToDeleteError, status.name)
-                            )
+                            if (status != WRStatus.SUCCESS)
+                                snackBarHostState.showSnackbar(
+                                    String.format(action.unableToDeleteError, status.name)
+                                )
+                        }
                     }
                 }
             }
@@ -240,9 +242,9 @@ class HomeScreenViewModel(
                 val results = searchResults.query.pages.sortedBy { it.index }
                 val resultsParsed = results.map {
                     it.copy(
-                        snippet = it.snippet.replace("<span.+?(?<!/)>".toRegex(), "<b>")
+                        snippet = it.snippet.replace("<span.+?(?<!/)>\".toRegex(), "<b>")
                             .replace("</span>", "</b>"),
-                        titleSnippet = it.titleSnippet.replace("<span.+?(?<!/)>".toRegex(), "<b>")
+                        titleSnippet = it.titleSnippet.replace("<span.+?(?<!/)>\".toRegex(), "<b>")
                             .replace("</span>", "</b>")
                     )
                 }
@@ -319,13 +321,14 @@ class HomeScreenViewModel(
                         backStack.add(
                             HomeSubscreen.Article(
                                 title = "Error",
-                                extract = listOf(
-                                    "An error occurred :(\n" +
-                                            "Please check your internet connection"
-                                ).map { parseWikitext(it) },
+                                savedState = SavedState(
+                                    extract = listOf(
+                                        "An error occurred :(\n" +
+                                                "Please check your internet connection"
+                                    ).map { parseWikitext(it) }
+                                ),
                                 photo = null,
                                 photoDesc = null,
-                                langs = null,
                                 currentLang = setLang,
                                 pageId = null,
                                 savedStatus = SavedStatus.NOT_SAVED
@@ -338,12 +341,13 @@ class HomeScreenViewModel(
                         backStack.add(
                             HomeSubscreen.Article(
                                 title = "Error",
-                                extract = listOf("No search results found for $q").map {
-                                    parseWikitext(it)
-                                },
+                                savedState = SavedState(
+                                    extract = listOf("No search results found for $q").map {
+                                        parseWikitext(it)
+                                    }
+                                ),
                                 photo = null,
                                 photoDesc = null,
-                                langs = null,
                                 currentLang = setLang,
                                 pageId = null,
                                 savedStatus = SavedStatus.NOT_SAVED
@@ -448,17 +452,21 @@ class HomeScreenViewModel(
                         }
                     }
 
+                    val savedState = SavedState(
+                        extract = parsedExtract,
+                        sections = articleSections,
+                        langs = apiResponse?.langs
+                    )
+
                     if (!replaceBackstackEntry) backStack.add(
                         HomeSubscreen.Article(
                             title = apiResponse?.title ?: "Error",
                             photo = apiResponse?.photo,
                             photoDesc = apiResponse?.description,
-                            langs = apiResponse?.langs,
                             currentLang = setLang,
                             pageId = apiResponse?.pageId,
                             savedStatus = saved,
-                            extract = parsedExtract,
-                            sections = articleSections
+                            savedState = savedState
                         )
                     )
                     else
@@ -466,12 +474,10 @@ class HomeScreenViewModel(
                             title = apiResponse?.title ?: "Error",
                             photo = apiResponse?.photo,
                             photoDesc = apiResponse?.description,
-                            langs = apiResponse?.langs,
                             currentLang = setLang,
                             pageId = apiResponse?.pageId,
                             savedStatus = saved,
-                            extract = parsedExtract,
-                            sections = articleSections
+                            savedState = savedState
                         )
 
                     // Reset refList
@@ -488,19 +494,20 @@ class HomeScreenViewModel(
                     backStack.add(
                         HomeSubscreen.Article(
                             title = "Error",
-                            extract = if (e.message?.contains("404") == true) {
-                                listOf("No article with title $title")
-                                    .map { parseWikitext(it) }
-                            } else if (e is HttpException) {
-                                listOf(
-                                    "An error occurred :(\n" +
-                                            "Please check your internet connection"
-                                ).map { parseWikitext(it) }
-                            } else {
-                                listOf("An unknown error occured :(\n${e.message} caused by ${e.cause}")
-                                    .map { parseWikitext(it) }
-                            },
-                            langs = null,
+                            savedState = SavedState(
+                                extract = if (e.message?.contains("404") == true) {
+                                    listOf("No article with title $title")
+                                        .map { parseWikitext(it) }
+                                } else if (e is HttpException) {
+                                    listOf(
+                                        "An error occurred :(\n" +
+                                                "Please check your internet connection"
+                                    ).map { parseWikitext(it) }
+                                } else {
+                                    listOf("An unknown error occured :(\n${e.message} caused by ${e.cause}")
+                                        .map { parseWikitext(it) }
+                                }
+                            ),
                             currentLang = null,
                             photo = null,
                             photoDesc = null,
@@ -518,10 +525,11 @@ class HomeScreenViewModel(
                 backStack.add(
                     HomeSubscreen.Article(
                         title = "Error",
-                        extract = listOf("Null search query").map { parseWikitext(it) },
+                        savedState = SavedState(
+                            extract = listOf("Null search query").map { parseWikitext(it) }
+                        ),
                         photo = null,
                         photoDesc = null,
-                        langs = null,
                         currentLang = setLang,
                         pageId = null,
                         savedStatus = SavedStatus.NOT_SAVED
@@ -640,30 +648,32 @@ class HomeScreenViewModel(
             backStack[lastIndex] =
                 (backStack[lastIndex] as HomeSubscreen.Article).copy(savedStatus = SavedStatus.SAVING)
 
-            val pageTitle = title ?: (backStack[lastIndex] as HomeSubscreen.Article).title
-            val apiResponse = wikipediaRepository
-                .getPageData(pageTitle)
+            val article = backStack.last() as HomeSubscreen.Article
 
-            val apiResponseQuery = apiResponse
-                .query
-                ?.pages?.get(0)
-
-            if (apiResponseQuery == null) {
-                Log.e("ViewModel", "Cannot save article, apiResponse is null")
+            if (article.pageId == null) {
+                Log.e("ViewModel", "Cannot save article, pageId is null")
+                interceptor.setHost("${preferencesState.value.lang}.wikipedia.org")
+                return WRStatus.NO_SEARCH_RESULT
+            }
+            if (article.title == "Error") {
+                Log.e("ViewModel", "Cannot save article, article is an error page")
                 interceptor.setHost("${preferencesState.value.lang}.wikipedia.org")
                 return WRStatus.NO_SEARCH_RESULT
             }
 
-            val pageContent = wikipediaRepository.getPageContent(apiResponseQuery.title)
+            val pageContent = wikipediaRepository.getPageContent(article.title)
+
+            val apiResponse = wikipediaRepository
+                .getPageData(article.title)
 
             appDatabaseRepository.insertSavedArticle(
                 SavedArticle(
-                    pageId = apiResponseQuery.pageId ?: 0,
+                    pageId = article.pageId,
                     lang = currentLang,
                     langName = langCodeToName(currentLang),
-                    title = apiResponseQuery.title,
-                    thumbnail = apiResponseQuery.thumbnail?.source,
-                    description = apiResponseQuery.description,
+                    title = article.title,
+                    thumbnail = article.photo?.source,
+                    description = article.photoDesc,
                     apiResponse = Json.encodeToString(apiResponse),
                     pageContent = pageContent
                 )
@@ -688,14 +698,12 @@ class HomeScreenViewModel(
      *
      * @return A [WRStatus] enum value indicating the status of the delete operation
      */
-    private fun deleteArticle(pageId: Int, lang: String): WRStatus {
-        viewModelScope.launch(Dispatchers.IO) {
-            appDatabaseRepository.deleteSavedArticle(pageId, lang)
-            val lastIndex = backStack.lastIndex
-            if (backStack[lastIndex] is HomeSubscreen.Article) backStack[lastIndex] =
+    private suspend fun deleteArticle(pageId: Int, lang: String): WRStatus {
+        appDatabaseRepository.deleteSavedArticle(pageId, lang)
+        val lastIndex = backStack.lastIndex
+        if (backStack.lastIndex > -1 && backStack[lastIndex] is HomeSubscreen.Article)
+            backStack[lastIndex] =
                 (backStack[lastIndex] as HomeSubscreen.Article).copy(savedStatus = SavedStatus.NOT_SAVED)
-        }
-
         return WRStatus.SUCCESS
     }
 
@@ -747,17 +755,21 @@ class HomeScreenViewModel(
                     }
                 }
 
+                val savedState = SavedState(
+                    extract = parsedExtract,
+                    sections = articleSections,
+                    langs = apiResponse?.langs
+                )
+
                 backStack.add(
                     HomeSubscreen.Article(
                         title = apiResponse?.title ?: "Error",
                         photo = apiResponse?.photo,
                         photoDesc = apiResponse?.description,
-                        langs = apiResponse?.langs,
                         currentLang = preferencesState.value.lang,
                         pageId = apiResponse?.pageId,
                         savedStatus = SavedStatus.SAVED,
-                        extract = parsedExtract,
-                        sections = articleSections
+                        savedState = savedState
                     )
                 )
 
@@ -799,7 +811,7 @@ class HomeScreenViewModel(
 
                 if (wikitext[i] == '<') {
                     var currSubstring = wikitext.substring(i, min(i + 16, wikitext.length))
-                    if (currSubstring.startsWith("<math display")) {
+                    if (currSubstring.startsWith("<mathdisplay")) {
                         currSubstring = wikitext.substring(i).substringBefore("</math>")
                         out.add(
                             curr.toWikitextAnnotatedString(
@@ -856,7 +868,8 @@ class HomeScreenViewModel(
                                     append(
                                         currSubstring.substringAfter('|').substringBeforeLast("]]")
                                             .split('|')
-                                            .filterNot { it.matches("thumb|thumbnail|frame|frameless|border|baseline|class=.*|center|left|right|upright.*|.+px|alt=.*".toRegex()) }
+                                            .filterNot { it.matches("thumb|thumbnail|frame|frameless|border|baseline|class=.*|center|left|right|upright.*|.+px|alt=.*".toRegex())
+                                            }
                                             .joinToString("|")
                                     )
                                     if (currSubstring.contains("class=skin-invert-image")) {
